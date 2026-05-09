@@ -1,10 +1,9 @@
 # EzMemory
-Lightweight, 2 file C++ library for memory manipulation.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/windows)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
 
-**EzMemory** is a lightweight, NTAPI-based memory manipulation library for Windows. Built for reverse engineering, game modding, and debugging tools — with clean syntax and multi-process support.
+**EzMemory** is a lightweight, NTAPI-based memory manipulation library for Windows. Built for reverse engineering, game modding, and debugging tools; with clean syntax and multi-process support.
 
 ## Quick start
 ```cpp
@@ -21,6 +20,7 @@ int main() {
 	 Attaches EasyMem to the target process.
 	 Args:
 	 ProcName - Target process name.
+	 Access - What rights will the handle get (default: EZMEM_DEFAULT_RIGHTS)
 	 Returns:
 	 EzMemProcess instance.
 	*/
@@ -61,10 +61,10 @@ int main() {
 	std::cout << "Value: " << std::dec << val << std::endl;
 
 	/*
-	 Detaches EzMem.
-	 Args:
-	 EzMemProcess instance.
-	 FreeMemory - Free all allocated memory from this instance? (boolean, defaults to true)
+ 	 Detaches the EzMemProcess instance.
+ 	 Args:
+ 	 EzMemProcess instance.
+ 	 FreeMemory - Free all allocated memory from this instance? (boolean, defaults to true).
 	*/
 	EzMem::Detach(Process, true);
 
