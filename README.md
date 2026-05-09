@@ -1,7 +1,7 @@
 # EzMemory
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/windows)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://isocpp.org/)
 
 **EzMemory** is a lightweight, NTAPI-based memory manipulation library for Windows. Built for reverse engineering, game modding, and debugging tools; with clean syntax and multi-process support.
 
