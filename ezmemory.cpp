@@ -43,6 +43,7 @@ SOFTWARE.
     (p)->SecurityQualityOfService = NULL;               \
 }
 #endif
+
 typedef struct _UNICODE_STRING {
     USHORT Length;
     USHORT MaximumLength;
@@ -119,7 +120,7 @@ typedef NTSTATUS(NTAPI* NtOpenProcess_t)(
     ACCESS_MASK DesiredAccess,
     PCOBJECT_ATTRIBUTES ObjectAttributes,
     PCLIENT_ID ClientId
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtReadVirtualMemory_t)(
     HANDLE ProcessHandle,
@@ -127,7 +128,7 @@ typedef NTSTATUS(NTAPI* NtReadVirtualMemory_t)(
     PVOID Buffer,
     SIZE_T NumberOfBytesToRead,
     PSIZE_T NumberOfBytesRead
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtWriteVirtualMemory_t)(
     HANDLE ProcessHandle,
@@ -135,7 +136,7 @@ typedef NTSTATUS(NTAPI* NtWriteVirtualMemory_t)(
     PVOID Buffer,
     SIZE_T NumberOfBytesToWrite,
     PSIZE_T NumberOfBytesWritten
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtAllocateVirtualMemory_t)(
     HANDLE ProcessHandle,
@@ -144,14 +145,14 @@ typedef NTSTATUS(NTAPI* NtAllocateVirtualMemory_t)(
     PSIZE_T RegionSize,
     ULONG AllocationType,
     ULONG PageProtection
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtFreeVirtualMemory_t)(
     HANDLE ProcessHandle,
     PVOID* BaseAddress,
     PSIZE_T RegionSize,
     ULONG FreeType
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtQueryInformationProcess_t)(
     HANDLE ProcessHandle,
@@ -159,7 +160,7 @@ typedef NTSTATUS(NTAPI* NtQueryInformationProcess_t)(
     PVOID ProcessInformation,
     ULONG ProcessInformationLength,
     PULONG ReturnLength
-    );
+);
 
 typedef NTSTATUS(NTAPI* NtProtectVirtualMemory_t)(
     HANDLE ProcessHandle,
@@ -167,7 +168,7 @@ typedef NTSTATUS(NTAPI* NtProtectVirtualMemory_t)(
     PSIZE_T RegionSize,
     ULONG NewProtection,
     PULONG OldProtection
-    );
+);
 
 /*
 *   HELPER FUNCTIONS
@@ -182,8 +183,9 @@ HMODULE GetModuleBase(const wchar_t* moduleName) {
 #else
     PEB* peb = (PEB*)__readgsqword(0x30);
 #endif
-    if (!peb) {
-        return NULL;
+
+    if (!peb || !peb->Ldr) {
+        return 0;
     }
 
     LIST_ENTRY* modlist = &peb->Ldr->InMemoryOrderModuleList;
@@ -224,15 +226,6 @@ DWORD GetPID(const wchar_t* ProcName) {
     return pid;
 }
 
-// this really dosen't validate anything, just checks if the addressses aren't wrong
-bool IsValidPtr(uintptr_t ptr) {
-#ifdef _WIN64
-    return (ptr != 0 && ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF);
-#else
-    return (ptr != 0 && ptr > 0x1000 && ptr < 0x7FFFFFFF);
-#endif
-}
-
 // function defines
 NtOpenProcess_t NtOpenProcess;
 NtReadVirtualMemory_t NtReadVirtualMemory;
@@ -246,6 +239,10 @@ HMODULE hNtDll = 0;
 
 void EzMem::Initialize() {
     hNtDll = GetModuleBase(L"ntdll.dll");
+    if (!hNtDll) {
+        throw std::runtime_error("EzMem::Initialize(): Failed to get ntdll.dll base address");
+    }
+
     NtOpenProcess = (NtOpenProcess_t)GetProcAddress(hNtDll, "NtOpenProcess");
     NtReadVirtualMemory = (NtReadVirtualMemory_t)GetProcAddress(hNtDll, "NtReadVirtualMemory");
     NtWriteVirtualMemory = (NtWriteVirtualMemory_t)GetProcAddress(hNtDll, "NtWriteVirtualMemory");
@@ -264,20 +261,27 @@ void EzMem::Initialize() {
 void EzMem::Detach(EzMemProcess& Process, bool FreeMemory) {
     if (FreeMemory) {
         for (uintptr_t address : Process.allocations) {
-            NtFreeVirtualMemory(Process.hProc, (PVOID*)&address, 0, MEM_RELEASE);
+            PVOID addr = (PVOID)address;
+            Process.LastStatus = NtFreeVirtualMemory(Process.hProc, &addr, 0, MEM_RELEASE);
         }
         Process.allocations.clear();
     }
     if (Process.hProc) {
         CloseHandle(Process.hProc);
         Process.hProc = nullptr;
+        Process.pid = 0;
     }
 }
 
 EzMemProcess EzMem::Attach(const wchar_t* ProcName, DWORD access) {
     EzMemProcess Process{};
 
-    HANDLE hProc = 0;
+    if (!NtOpenProcess || !NtReadVirtualMemory || !NtWriteVirtualMemory ||
+        !NtAllocateVirtualMemory || !NtFreeVirtualMemory ||
+        !NtQueryInformationProcess || !NtProtectVirtualMemory) {
+        return Process;
+    }
+
     CLIENT_ID cid{};
     OBJECT_ATTRIBUTES attr;
     InitializeObjectAttributes(&attr, NULL, 0, NULL, NULL);
@@ -288,17 +292,25 @@ EzMemProcess EzMem::Attach(const wchar_t* ProcName, DWORD access) {
     }
     Process.pid = pid;
 
-    cid.UniqueProcess = reinterpret_cast<HANDLE>(pid);
+    cid.UniqueProcess = (HANDLE)pid;
     cid.UniqueThread = NULL;
 
     // make a syscall to NtOpenProcess instead of OpenProcess
     Process.LastStatus = NtOpenProcess(&Process.hProc, access, &attr, &cid);
-    if (Process.LastStatus != 0x0) {
+    if (Process.LastStatus != 0x0 || !Process.hProc) {
+        Process.hProc = nullptr;
+        Process.pid = 0;
         return Process;
     }
 
     // get the base
     Process.base = EzMem::GetModule(Process, ProcName);
+
+    if (!Process.base) {
+        CloseHandle(Process.hProc);
+        Process.hProc = nullptr;
+        Process.pid = 0;
+    }
 
     return Process;
 }
@@ -316,10 +328,17 @@ uintptr_t EzMem::GetModule(EzMemProcess& Process, const wchar_t* ModuleName) {
     PEB_LDR_DATA ldr{};
 
     // read the PEB
-    EzMem::ReadEx(Process, (uintptr_t)pbi.PebBaseAddress, &peb, sizeof(peb));
-    EzMem::ReadEx(Process, (uintptr_t)peb.Ldr, &ldr, sizeof(ldr));
+    if (!EzMem::ReadEx(Process, (uintptr_t)pbi.PebBaseAddress, &peb, sizeof(peb))) {
+        return 0;
+    }
+    if (!EzMem::ReadEx(Process, (uintptr_t)peb.Ldr, &ldr, sizeof(ldr))) {
+        return 0;
+    }
 
     LIST_ENTRY* pListEntry = ldr.InMemoryOrderModuleList.Flink;
+    if (!pListEntry) {
+        return 0;
+    }
     do {
         LDR_DATA_TABLE_ENTRY entry{};
         uintptr_t entryAddr = (uintptr_t)pListEntry - offsetof(LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
@@ -342,8 +361,9 @@ uintptr_t EzMem::GetModule(EzMemProcess& Process, const wchar_t* ModuleName) {
                 safeLen--;
             }
 
-            // no validation here since we are almost sure this will work
-            EzMem::ReadEx(Process, (uintptr_t)entry.BaseDllName.Buffer, name, safeLen);
+            if (!EzMem::ReadEx(Process, (uintptr_t)entry.BaseDllName.Buffer, name, safeLen)) {
+                return 0;
+            }
 
             name[safeLen / sizeof(wchar_t)] = L'\0';
             if (_wcsicmp(name, ModuleName) == 0) {
@@ -401,25 +421,4 @@ bool EzMem::Free(EzMemProcess& Process, uintptr_t address) {
         return true;
     }
     return false;
-}
-
-// this is just a wrapper around ResolvePointerChain
-template <typename T>
-T EzMem::ReadChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets) {
-    uintptr_t addr = ResolvePointerChain(Process, base, offsets);
-    if (!addr) {
-        return T{};
-    }
-    return EzMem::Read<T>(Process, addr);
-}
-
-// this is just a wrapper around ResolvePointerChain
-template <typename T>
-bool EzMem::WriteChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets, const T& value) {
-    uintptr_t addr = ResolvePointerChain<uintptr_t>(Process, base, offsets);
-    if (!addr) {
-        return false;
-    }
-    EzMem::Write<T>(Process, addr, value);
-    return (Process.LastStatus == 0x0);
 }
