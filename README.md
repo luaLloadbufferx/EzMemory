@@ -5,6 +5,13 @@
 
 **EzMemory** is a lightweight, NTAPI-based memory manipulation library for Windows. Built for reverse engineering, game modding, and debugging tools; with clean syntax and multi-process support.
 
+## Q&A
+**Q:** Why is this/that awfully coded?  
+**A:** This is unfinished, and I'm aware of multiple issues. I'm planning to re-write everything.
+
+**Q:** What are you planning on adding?  
+**A:** Most importantly, I will add hooks, pattern scanning and possibly injection.
+
 ## Quick start
 ```cpp
 #include "easymem.hpp"
