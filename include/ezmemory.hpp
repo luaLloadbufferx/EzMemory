@@ -46,11 +46,7 @@ struct EzMemProcess {
 	EzMemProcess(EzMemProcess&&) noexcept = default;
 	EzMemProcess& operator=(EzMemProcess&&) noexcept = default;
 
-	EzMemProcess() : hProc(nullptr), pid(0), base(0), read(0), written(0), LastStatus(0) {}
-
-	NTSTATUS GetLastNtError() const {
-		return LastStatus;
-	}
+	EzMemProcess() : hProc(nullptr), pid(0), base(0), read(0), written(0), LastStatus(0) {};
 };
 
 namespace EzMem {
@@ -190,8 +186,14 @@ namespace EzMem {
 	 Returns:
 	 Value of the address at the end of the chain.
 	*/
-	template<typename T>
-	T ReadChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets);
+	template <typename T>
+	T ReadChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets) {
+		uintptr_t addr = ResolvePointerChain(Process, base, offsets);
+		if (!addr) {
+			return T{};
+		}
+		return EzMem::Read<T>(Process, addr);
+	}
 
 	/*
 	 Write to a pointer chain.
@@ -203,8 +205,15 @@ namespace EzMem {
 	 Returns:
 	 Did we succeed writing? (boolean)
 	*/
-	template<typename T>
-	bool WriteChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets, const T& value);
+	template <typename T>
+	bool WriteChain(EzMemProcess& Process, uintptr_t base, const std::vector<uintptr_t>& offsets, const T& value) {
+		uintptr_t addr = ResolvePointerChain<uintptr_t>(Process, base, offsets);
+		if (!addr) {
+			return false;
+		}
+		EzMem::Write<T>(Process, addr, value);
+		return (Process.LastStatus == 0x0);
+	}
 
 	/*
 	 Get the base address of a module.
