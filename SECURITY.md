@@ -11,7 +11,7 @@
 ## Reporting a Vulnerability
 
 EzMem deeply interacts with the Windows APIs and target processes.  
-**FOR ISSUES** (crashes, leaks), please, open a **public GitHub issue**.
+**FOR ISSUES** (crashes, leaks), please, open a **public GitHub issue**.  
 **FOR SECURITY CONCERNS** (vulnerabilities), please, report it via **GitHub's Private Security Advisories**
 To help me quickly find and fix the issue, please add a short description of the issue.
 
