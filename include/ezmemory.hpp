@@ -30,6 +30,7 @@ SOFTWARE.
 #include <string>
 
 #define EZMEM_DEFAULT_RIGHTS (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION)
+#define EZMEM_INJECT_RIGHTS (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD)
 
 struct EzMemProcess {
 	HANDLE hProc;
@@ -118,7 +119,7 @@ namespace EzMem {
 	 Read<type>(Process, address);
 	*/
 	template <typename T>
-	requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	T Read(EzMemProcess& Process, uintptr_t address) {
 		T value{};
 		if (!EzMem::ReadEx(Process, address, &value, sizeof(T))) {
@@ -148,7 +149,7 @@ namespace EzMem {
 	 Write<type>(Process, address, value);
 	*/
 	template <typename T>
-	requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Write(EzMemProcess& Process, uintptr_t address, const T& value) {
 		EzMem::WriteEx(Process, address, &value, sizeof(T));
 		return;
@@ -236,5 +237,15 @@ namespace EzMem {
 	 Old Protection.
 	*/
 	DWORD Protect(EzMemProcess& Process, uintptr_t address, SIZE_T size, DWORD protection);
+
+	/*
+	 Inject a DLL with the LoadLibraryW method.
+	 Args:
+	 EzMemProcess instance.
+	 DllPath.
+	 Returns:
+	 Succeeded boolean.
+	*/
+	bool LoadLibraryInject(EzMemProcess& Process, const wchar_t* DllPath);
 
 } // namespace EzMem
