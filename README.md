@@ -14,7 +14,7 @@
 
 ## Quick start
 ```cpp
-#include "easymem.hpp"
+#include "ezmemory.hpp"
 #include <iostream>
 
 int main() {
