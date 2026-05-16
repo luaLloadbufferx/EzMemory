@@ -29,7 +29,7 @@ SOFTWARE.
 */
 
 #include <string>
-#include "ezmemory.hpp"
+#include "include/ezmemory.hpp"
 #include <TlHelp32.h>
 #include <iostream>
 
