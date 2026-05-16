@@ -29,7 +29,7 @@ SOFTWARE.
 */
 
 #include <string>
-#include "include/ezmemory.hpp"
+#include "ezmemory.hpp"
 #include <TlHelp32.h>
 #include <iostream>
 
@@ -115,6 +115,24 @@ typedef struct _PROCESS_BASIC_INFORMATION {
 
 typedef const OBJECT_ATTRIBUTES* PCOBJECT_ATTRIBUTES;
 
+typedef struct _PS_ATTRIBUTE
+{
+    ULONG_PTR Attribute;
+    SIZE_T Size;
+    union
+    {
+        ULONG_PTR Value;
+        PVOID ValuePtr;
+    };
+    PSIZE_T ReturnLength;
+} PS_ATTRIBUTE, * PPS_ATTRIBUTE;
+
+typedef struct _PS_ATTRIBUTE_LIST
+{
+    SIZE_T TotalLength;
+    PS_ATTRIBUTE Attributes[1];
+} PS_ATTRIBUTE_LIST, * PPS_ATTRIBUTE_LIST;
+
 typedef NTSTATUS(NTAPI* NtOpenProcess_t)(
     PHANDLE ProcessHandle,
     ACCESS_MASK DesiredAccess,
@@ -170,6 +188,20 @@ typedef NTSTATUS(NTAPI* NtProtectVirtualMemory_t)(
     PULONG OldProtection
 );
 
+typedef NTSTATUS(NTAPI* NtCreateThreadEx_t)(
+    PHANDLE ThreadHandle,
+    ACCESS_MASK DesiredAccess,
+    PCOBJECT_ATTRIBUTES ObjectAttributes,
+    HANDLE ProcessHandle,
+    PVOID StartRoutine, // NTAPI functions just expect a pointer so this is acceptable
+    PVOID Argument,
+    ULONG CreateFlags,
+    SIZE_T ZeroBits,
+    SIZE_T StackSize,
+    SIZE_T MaximumStackSize,
+    PPS_ATTRIBUTE_LIST AttributeList
+);
+
 /*
 *   HELPER FUNCTIONS
 */
@@ -181,7 +213,7 @@ HMODULE GetModuleBase(const wchar_t* moduleName) {
 #ifdef _WIN64
     PEB* peb = (PEB*)__readgsqword(0x60);
 #else
-    PEB* peb = (PEB*)__readgsqword(0x30);
+    PEB* peb = (PEB*)__readfsdword(0x30);
 #endif
 
     if (!peb || !peb->Ldr) {
@@ -234,6 +266,7 @@ NtAllocateVirtualMemory_t NtAllocateVirtualMemory;
 NtFreeVirtualMemory_t NtFreeVirtualMemory;
 NtQueryInformationProcess_t NtQueryInformationProcess;
 NtProtectVirtualMemory_t NtProtectVirtualMemory;
+NtCreateThreadEx_t NtCreateThreadEx;
 
 HMODULE hNtDll = 0;
 
@@ -250,6 +283,7 @@ void EzMem::Initialize() {
     NtFreeVirtualMemory = (NtFreeVirtualMemory_t)GetProcAddress(hNtDll, "NtFreeVirtualMemory");
     NtQueryInformationProcess = (NtQueryInformationProcess_t)GetProcAddress(hNtDll, "NtQueryInformationProcess");
     NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetProcAddress(hNtDll, "NtProtectVirtualMemory");
+    NtCreateThreadEx = (NtCreateThreadEx_t)GetProcAddress(hNtDll, "NtCreateThreadEx");
 
     return;
 }
@@ -421,4 +455,32 @@ bool EzMem::Free(EzMemProcess& Process, uintptr_t address) {
         return true;
     }
     return false;
+}
+
+bool EzMem::LoadLibraryInject(EzMemProcess& Process, const wchar_t* DllPath) {
+    PVOID LoadLib = GetProcAddress((HMODULE)EzMem::GetModule(Process, L"kernel32.dll"), "LoadLibraryW");
+    if (!LoadLib) {
+        return false;
+    }
+    
+    SIZE_T size = (wcslen(DllPath) + 1) * sizeof(wchar_t);
+    auto Address = EzMem::Allocate(Process, size);
+
+    EzMem::WriteEx(Process, Address, DllPath, size);
+
+    HANDLE hThread = 0;
+
+    Process.LastStatus = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL, Process.hProc, LoadLib, (PVOID)Address, 0, 0, 0, 0, NULL);
+    if (Process.LastStatus != 0x0 || !hThread) {
+        std::cout << "Failed to create thread!\n";
+        EzMem::Free(Process, Address);
+        return false;
+    }
+
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+
+    EzMem::Free(Process, Address);
+
+    return true;
 }
